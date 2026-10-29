@@ -1,4 +1,4 @@
-name: CI/CD Pipeline to AWS ECR
+name: CI/CD Pipeline to AWS ECR and EC2
 
 on:
   push:
@@ -30,3 +30,23 @@ jobs:
         run: |
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+
+      - name: Deploy to EC2 via SSH
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            # ECR login on EC2
+            aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin ${{ steps.login-ecr.outputs.registry }}
+            
+            # Stop and remove old container if running
+            docker stop my-web-app-container || true
+            docker rm my-web-app-container || true
+            
+            # Pull latest image from ECR
+            docker pull ${{ steps.login-ecr.outputs.registry }}/my-web-app:latest
+            
+            # Run new container
+            docker run -d --name my-web-app-container -p 80:80 ${{ steps.login-ecr.outputs.registry }}/my-web-app:latest
